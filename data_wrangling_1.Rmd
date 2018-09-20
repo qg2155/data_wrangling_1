@@ -10,3 +10,58 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 ```
 
+## Import FAS csv files
+
+Import my first csv files.
+
+```{r litters}
+litters_data = read.csv(file = "./datasets/FAS_litters.csv")
+litters_data = janitor::clean_names(litters_data)
+```
+
+```{r pups}
+pups_data = read.csv(file = "./datasets/FAS_pups.csv")
+pups_data = janitor::clean_names(pups_data)
+```
+
+```{r viewing}
+head(litters_data)
+tail(litters_data)
+
+skimr::skim(litters_data)
+```
+
+```{r}
+pups_data = read_csv("./datasets/FAS_pups.csv", col_types = "ciiiii")
+pups_data = janitor::clean_names(pups_data)
+skimr::skim(pups_data)
+```
+
+
+## Other formats
+
+Read in mlb data
+
+```{r}
+mlb_data = readxl::read_excel(path = "./datasets/mlb11.xlsx")
+
+mlb_subset = readxl::read_excel(path = "./datasets/mlb11.xlsx", range = "A1:E17")
+```
+
+Read in pulse data:
+
+```{r}
+pulse_data = haven::read_sas("./datasets/public_pulse_data.sas7bdat")
+```
+
+## Compare with base R
+```{r}
+pups_readr = read.csv("./datasets/FAS_pups.csv")
+pups_baser = read.csv("./datasets/FAS_pups.csv")
+
+pups_readr
+pups_baser
+```
+
+
+
