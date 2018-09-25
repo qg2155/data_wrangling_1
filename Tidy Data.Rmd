@@ -1,0 +1,21 @@
+---
+title: "Tidy_data"
+author: "Helen Guan"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+## gather
+
+PULSE data
+```{r}
+pulse_data = haven::read_sas("./datasets/public_pulse_data.sas7bdat") %>%
+  janitor::clean_names()
+pulse_data
+```
+
