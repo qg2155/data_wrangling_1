@@ -19,3 +19,60 @@ pulse_data = haven::read_sas("./datasets/public_pulse_data.sas7bdat") %>%
 pulse_data
 ```
 
+This isn't tidy yet ...
+
+```{r}
+pulse_data %>%
+  gather(key = "visit", value = "bdi_score", bdi_score_bl:bdi_score_12m) 
+```
+
+Illustrate 'separate':
+
+```{r}
+pulse_data = haven::read_sas("./datasets/public_pulse_data.sas7bdat") %>%
+  janitor::clean_names() %>%
+  gather(key = visit, value = bdi, bdi_score_bl:bdi_score_12m) %>%
+  separate(visit, into = c("remove_1", "remove_2", "visit"), sep = "_") %>%
+  select(id, visit, everything(), -starts_with("remove")) %>%
+  mutate(visit = replace(visit, visit == "bl", "00m"),
+         visit = factor(visit, levels = str_c(c("00", "01", "06", "12"), "m"))) %>%
+  arrange(id, visit)
+```
+
+## Revisit FAS_litters
+
+```{r}
+litters_data = read_csv("./datasets/FAS_litters.csv", col_types = "ccddiiii") %>% 
+  janitor::clean_names() %>%
+  separate(group, into = c("dose", "day"), 3)
+```
+
+Learning Assessment
+```{r}
+litters_data %>% 
+  select(litter_number, ends_with("weight")) %>% 
+  gather(key = gd, value = weight, gd0_weight: gd18_weight) %>% 
+  mutate(gd = recode(gd, "gd0_weight" = 0, "gd18_weight" = 18))
+```
+
+## Spread
+
+Create 'analysis_result'
+
+```{r}
+analysis_result = tibble(
+  group = c("treatment", "treatment", "placebo", "placebo"),
+  time = c("pre", "post", "pre", "post"),
+  mean = c(4, 8, 3.5, 4)
+)
+```
+
+Make it readable:
+
+```{r}
+analysis_result %>% 
+  spread(key = time , value = mean )
+```
+
+
+

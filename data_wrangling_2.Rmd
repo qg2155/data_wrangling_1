@@ -1,0 +1,116 @@
+---
+title: "data_import"
+author: "Helen Guan"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(tidyverse)
+library(rvest)
+library(httr)
+```
+
+### Scraping a table
+```{r}
+url = "http://samhda.s3-us-gov-west-1.amazonaws.com/s3fs-public/field-uploads/2k15StateFiles/NSDUHsaeShortTermCHG2015.htm"
+
+drug_use_xml = read_html(url)
+```
+
+Get the tables from HTML
+
+```{r}
+drug_use_xml %>%
+  html_nodes(css = "table") %>% 
+  .[[1]] %>%  #give me the first element (table) of that list
+  html_table() %>% 
+  slice(-1) %>%  #take out the row with notes -1 because first row of table
+  as_tibble() #make list into a dataframe
+```
+
+```{r learning assessment}
+url = "https://www.bestplaces.net/cost_of_living/city/new_york/new_york"
+
+nyc_cost_xml = read_html(url)
+```
+
+```{r learning assessment cont}
+nyc_cost_xml %>% 
+  html_nodes(css = "table") %>%
+  .[[1]] %>% 
+  html_table(header = TRUE) %>% #header true turns first row into header
+  View  
+```
+
+### Harry Potter
+
+```{r HP}
+hpsaga_html = read_html("https://www.imdb.com/list/ls000630791/") 
+ 
+titles = hpsaga_html %>% 
+    html_nodes(css = ".lister-item-header a") %>% 
+    html_text()
+
+money = hpsaga_html %>% 
+    html_nodes(css = ".text-small:nth-child(7) span:nth-child(5)") %>% 
+    html_text() 
+
+hpsaga_df = tibble(
+  title = titles,
+  gross_rev = money
+  ) 
+```
+
+Napolean dynamite
+```{r learning assessment 2}
+amazon_html = read_html("https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber=1")
+
+review_titles = amazon_html %>% 
+   html_nodes("#cm_cr-review_list .review-title") %>%
+  html_text()
+
+review_ratings = amazon_html %>% 
+  html_nodes(css = "#cm_cr-review_list .review-rating") %>% 
+  html_text()
+  
+review_text = amazon_html %>%
+    html_nodes(".review-data:nth-child(4)") %>%
+    html_text()
+
+reviews = tibble(
+  title = review_titles,
+  stars = review_ratings,
+  text = review_text
+)
+
+```
+
+## APIs
+
+Get water data
+
+As CSV
+```{r}
+nyc_water = GET("https://data.cityofnewyork.us/resource/waf7-5gvc.csv") %>%
+  content("parsed") # guess what class each variables are 
+```
+
+As JSON
+```{r}
+nyc_water = GET("https://data.cityofnewyork.us/resource/waf7-5gvc.json") %>% 
+  content("text") %>% 
+  jsonlite::fromJSON() %>%
+  as_tibble()
+```
+
+Pokemon API
+```{r}
+poke = GET("http://pokeapi.co/api/v2/pokemon/1") %>%
+  content()
+```
+
+
