@@ -1,0 +1,292 @@
+---
+title: "tidy_text"
+author: "Helen"
+date: "11/29/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+install.packages("tidytext")
+```
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(tidytext)
+library(stringr)
+library(forcats)
+library(viridis)
+```
+
+
+Same data ...
+
+```{r}
+library(httr)
+library(jsonlite)
+
+get_all_inspections = function(url) {
+  
+  all_inspections = vector("list", length = 0)
+  
+  loop_index = 1
+  chunk_size = 50000
+  DO_NEXT = TRUE
+  
+  while (DO_NEXT) {
+    message("Getting data, page ", loop_index)
+    
+    all_inspections[[loop_index]] = 
+      GET(url,
+          query = list(`$order` = "zipcode",
+                       `$limit` = chunk_size,
+                       `$offset` = as.integer((loop_index - 1) * chunk_size)
+                       )
+          ) %>%
+      content("text") %>%
+      fromJSON() %>%
+      as_tibble()
+    
+    DO_NEXT = dim(all_inspections[[loop_index]])[1] == chunk_size
+    loop_index = loop_index + 1
+  }
+  
+  all_inspections
+  
+}
+
+url = "https://data.cityofnewyork.us/resource/9w7m-hzhe.json"
+
+nyc_inspections = get_all_inspections(url) %>%
+  bind_rows() 
+```
+
+```{r}
+nyc_inspections %>%  #= read_csv("./data/DOHMH_New_York_City_Restaurant_Inspection_Results.csv.gz", 
+                           #col_types = cols(building = col_character()),
+                           #na = c("NA", "N/A")) %>% 
+  filter(grade %in% c("A", "B", "C")) %>% 
+  mutate(inspection_num = row_number(),
+         boro = str_to_title(boro)) %>% 
+  select(inspection_num, boro, grade, score, critical_flag, dba, cuisine_description, zipcode, violation_description)
+```
+
+
+Extract words!
+
+```{r}
+inspection_words = nyc_inspections %>% 
+  unnest_tokens(word, violation_description)
+```
+
+
+Remove stop words.
+
+```{r}
+data(stop_words)
+inspection_words = 
+  anti_join(inspection_words, stop_words)
+```
+
+
+Look at some words ...
+
+```{r}
+inspection_words %>% 
+  count(word, sort = TRUE) %>% 
+  top_n(10) %>% 
+  mutate(word = fct_reorder(word, n)) %>% 
+  ggplot(aes(x = word, y = n)) + 
+  geom_bar(stat = "identity", fill = "blue", alpha = .6) + 
+  coord_flip()
+```
+
+
+Look for frequencies
+
+```{r}
+word_ratios = inspection_words %>%
+  filter(grade %in% c("A", "C")) %>% 
+  count(word, grade) %>%
+  group_by(word) %>% 
+  filter(sum(n) >= 5) %>%
+  ungroup() %>%
+  spread(grade, n, fill = 0) %>%
+  mutate(
+    C_odds = (C + 1) / (sum(C) + 1),
+    A_odds = (A + 1) / (sum(A) + 1),
+    log_OR = log(C_odds / A_odds)
+  ) %>%
+  arrange(desc(log_OR)) 
+```
+
+```{r}
+word_ratios %>%
+  mutate(pos_log_OR = ifelse(log_OR > 0, "C > A", "A > C")) %>% 
+  group_by(pos_log_OR) %>%
+  top_n(15, abs(log_OR)) %>%
+  ungroup() %>%
+  mutate(word = fct_reorder(word, log_OR)) %>%
+  ggplot(aes(word, log_OR, fill = pos_log_OR)) +
+  geom_col() +
+  coord_flip() +
+  ylab("log odds ratio (C/A)") +
+  scale_fill_discrete(name = "")
+```
+
+
+### sentiment analysis
+
+
+```{r}
+bing_sentiments = get_sentiments("bing")
+```
+
+Join sentiments to words
+
+```{r}
+inspection_sentiments = inspection_words %>% 
+  inner_join(., bing_sentiments) %>% 
+  count(inspection_num, sentiment) %>% 
+  spread(sentiment, n, fill = 0) %>% 
+  mutate(sentiment = positive - negative) %>% 
+  select(inspection_num, sentiment)
+```
+
+```{r}
+inspection_sentiments = 
+  right_join(nyc_inspections, inspection_sentiments, 
+             by = "inspection_num")
+```
+
+
+```{r}
+set.seed(1)
+inspection_sentiments %>% 
+  filter(boro == "Manhattan") %>% 
+  sample_n(5000) %>% 
+  mutate(inspection_num = str_c("Inspection ", inspection_num),
+    inspection_num = fct_reorder(inspection_num, sentiment)) %>% 
+  ggplot(aes(x = inspection_num, 
+             y = sentiment, fill = grade, color = grade)) + 
+  geom_bar(stat = "identity") + 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank()) +
+  scale_fill_viridis(discrete = TRUE) + 
+  scale_color_viridis(discrete = TRUE) 
+```
+
+```{r}
+library(rvest)
+read_page_reviews = function(url) {
+  
+  h = read_html(url)
+  
+  title = h %>%
+    html_nodes("#cm_cr-review_list .review-title") %>%
+    html_text()
+  
+  stars = h %>%
+    html_nodes("#cm_cr-review_list .review-rating") %>%
+    html_text() %>%
+    str_extract("\\d") %>%
+    as.numeric()
+  
+  text = h %>%
+    html_nodes(".review-data:nth-child(5)") %>%
+    html_text()
+  
+  data_frame(title, stars, text)
+}
+
+url_base = "https://www.amazon.com/product-reviews/B00005JNBQ/ref=cm_cr_arp_d_viewopt_rvwer?ie=UTF8&reviewerType=avp_only_reviews&sortBy=recent&pageNumber="
+
+dynamite_reviews = 
+  tibble(page = 1:100,
+         urls = str_c(url_base, page)) %>% 
+  mutate(reviews = map(urls, read_page_reviews)) %>% 
+  unnest()
+```
+
+```{r}
+dynamite_reviews = 
+  dynamite_reviews %>%
+  as_tibble() %>%
+  mutate(review_num = row_number())
+
+data(stop_words)
+
+dynamite_words = 
+  dynamite_reviews %>% 
+  unnest_tokens(word, text) %>% 
+  anti_join(stop_words) %>% 
+  arrange(review_num)
+## Joining, by = "word"
+```
+
+```{r}
+dynamite_words %>%
+  filter(stars %in% c(1, 5)) %>%
+  group_by(stars) %>%
+  count(word) %>% 
+  top_n(5) %>%
+  knitr::kable()
+## Selecting by n
+```
+
+```{r}
+word_ratios <- dynamite_words %>%
+    filter(stars %in% c(1, 5)) %>% 
+    count(word, stars) %>%
+    group_by(word) %>% 
+    filter(sum(n) >= 3) %>%
+    ungroup() %>%
+    spread(stars, n, fill = 0) %>%
+    mutate_if(is.numeric, funs((. + 1) / sum(. + 1))) %>%
+    mutate(logratio = log(`5` / `1`)) %>%
+    arrange(desc(logratio)) 
+
+word_ratios %>% 
+  mutate(pos_log_OR = ifelse(logratio > 0, "5 star > 1 star", "1 star > 5 star")) %>%
+  group_by(pos_log_OR) %>%
+  top_n(10, abs(logratio)) %>%
+  ungroup() %>%
+  mutate(word = fct_reorder(word, logratio)) %>%
+  ggplot(aes(word, logratio, fill = pos_log_OR)) +
+  geom_col() +
+  coord_flip() +
+  ylab("log odds ratio (5/1)") +
+  scale_fill_discrete(name = "")
+```
+
+```{r}
+dynamite_word_sentiments <- dynamite_words %>% 
+  inner_join(get_sentiments("bing")) %>% 
+  count(review_num, sentiment) %>% 
+  spread(sentiment, n, fill = 0) %>% 
+  mutate(sentiment = positive - negative) %>% 
+  left_join(dynamite_reviews)
+## Joining, by = "word"
+## Joining, by = "review_num"
+
+ggplot(dynamite_word_sentiments, 
+       aes(x = reorder(review_num, -sentiment), 
+           y = sentiment, fill = stars, color = stars)) + 
+  geom_bar(stat = "identity") + 
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank()) +
+  scale_fill_viridis(direction = -1) + 
+  scale_color_viridis(direction = -1) 
+```
+
+```{r}
+dynamite_word_sentiments %>%
+  filter(sentiment == max(sentiment)) %>% 
+  pull(text)
+```
+

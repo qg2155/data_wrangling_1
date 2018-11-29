@@ -42,8 +42,7 @@ nyc_cost_xml = read_html(url)
 nyc_cost_xml %>% 
   html_nodes(css = "table") %>%
   .[[1]] %>% 
-  html_table(header = TRUE) %>% #header true turns first row into header
-  View  
+  html_table(header = TRUE) 
 ```
 
 ### Harry Potter
